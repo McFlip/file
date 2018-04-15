@@ -35,3 +35,6 @@ Makefile.in
 
 /src/file
 /src/magic.h
+
+/.kdev4
+file.kdev4
