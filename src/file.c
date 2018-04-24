@@ -63,8 +63,6 @@ FILE_RCSID("@(#)$File: file.c,v 1.171 2016/05/17 15:52:45 christos Exp $")
 #ifdef HAVE_WCHAR_H
 #include <wchar.h>
 #endif
-#define TEMPDIRECTORY "./tmp.AGFHDSFH/"
-#define TEMPDIRECTORY2 "\\.\\/tmp.AGFHDSFH\\/"
 
 #if defined(HAVE_GETOPT_H) && defined(HAVE_STRUCT_OPTION)
 #include <getopt.h>
@@ -142,6 +140,11 @@ private struct {
 	{ "regex",	MAGIC_PARAM_REGEX_MAX, 0 },
 	{ "bytes",	MAGIC_PARAM_BYTES_MAX, 0 },
 };
+private struct proc_arg_t{
+	struct magic_set *ms;
+	const char * argv;
+	int wid;
+}; /* Forensic Tool addition */
 
 private char *progname;		/* used throughout 		*/
 private int posixly;
@@ -161,14 +164,8 @@ private int process(struct magic_set *ms, const char *, int);
 private struct magic_set *load(const char *, int);
 private void setparam(const char *);
 private void applyparam(magic_t);
-int on_extract_entry(const char *filename, void *arg) {
-    static int i = 0;
-    int n = *(int *)arg;
-    char command[500];
-    sprintf(command, "%s %s | %s%s%s", "file", filename, "sed -n 's/", TEMPDIRECTORY2, "//p'");
-    system(command);
-    return 0;
-}
+private int on_extract_entry(const char *filename, void *arg); /* Forensic Tool addition */
+
 
 /*
  * main - parse arguments and handle options
@@ -529,18 +526,20 @@ process(struct magic_set *ms, const char *inname, int wid)
 
 	type = magic_file(ms, std_in ? NULL : inname);
 	char m2007[]="2007+";
-	if(strstr(type,m2007)!=NULL){
+	char zip[]="Zip archive";
+	if(strstr(type,m2007)!=NULL || strstr(type,zip)){
 		char command [500];
-
-    		sprintf(command, "mkdir %s", TEMPDIRECTORY);
-    		system(command);
-
-
-    		int arg = 2;
-    		zip_extract(inname, TEMPDIRECTORY, on_extract_entry, &arg);
-
-    		sprintf(command, "%s %s", "rm -r",TEMPDIRECTORY);
-   		 system(command);
+		char TEMPDIRECTORY[500];
+		strcpy(TEMPDIRECTORY, "file/XXXXXX");
+		mkdtemp(TEMPDIRECTORY);
+		struct proc_arg_t proc_arg = {
+			.ms = ms,
+			.argv = NULL,
+			.wid = wid
+		};
+ 		zip_extract(inname, TEMPDIRECTORY, on_extract_entry, &proc_arg);
+		sprintf(command, "%s %s", "rm -r",TEMPDIRECTORY);
+		system(command);
 	}
 
 	if (type == NULL) {
@@ -552,6 +551,16 @@ process(struct magic_set *ms, const char *inname, int wid)
 	}
 }
 
+/*
+ * Callback for zip_extract that calls process
+ */
+int on_extract_entry(const char *filename, void *arg) {
+	struct proc_arg_t *proc_arg = (struct proc_arg_t*)arg;
+	proc_arg->argv = filename;
+	printf("\n");
+	process(proc_arg->ms, proc_arg->argv, proc_arg->wid);
+	return 0;
+}
 
 protected size_t
 file_mbswidth(const char *s)
