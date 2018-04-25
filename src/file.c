@@ -140,11 +140,11 @@ private struct {
 	{ "regex",	MAGIC_PARAM_REGEX_MAX, 0 },
 	{ "bytes",	MAGIC_PARAM_BYTES_MAX, 0 },
 };
-private struct proc_arg_t{
+typedef struct {
 	struct magic_set *ms;
 	const char * argv;
 	int wid;
-}; /* Forensic Tool addition */
+}proc_arg_t; /* Forensic Tool addition */
 
 private char *progname;		/* used throughout 		*/
 private int posixly;
@@ -532,18 +532,20 @@ process(struct magic_set *ms, const char *inname, int wid)
 		char m2007[]="2007+";
 		char zip[]="Zip archive";
 		if(strstr(type,m2007)!=NULL || strstr(type,zip)){
-			char command [500];
-			char TEMPDIRECTORY[500];
-			strcpy(TEMPDIRECTORY, "file/XXXXXX");
-			mkdtemp(TEMPDIRECTORY);
-			struct proc_arg_t proc_arg = {
+			char TEMPDIRECTORY[] = "file/XXXXXX";
+			if ( (mkdtemp(TEMPDIRECTORY)) == NULL){
+				(void)perror("Unable to create Temp Directory to extract archive.\n");
+				return 1;
+			}
+			proc_arg_t proc_arg = {
 				.ms = ms,
 				.argv = NULL,
 				.wid = wid
 			};
-			zip_extract(inname, TEMPDIRECTORY, on_extract_entry, &proc_arg);
-			sprintf(command, "%s %s", "rm -r",TEMPDIRECTORY);
-			system(command);
+			if (zip_extract(inname, TEMPDIRECTORY, on_extract_entry, &proc_arg) < 0){
+				(void)fprintf(stderr, "Unable to extract archive %s.\n", inname);
+			}
+			remove(TEMPDIRECTORY);
 		}
 		return 0;
 	}
@@ -553,10 +555,11 @@ process(struct magic_set *ms, const char *inname, int wid)
  * Callback for zip_extract that calls process
  */
 int on_extract_entry(const char *filename, void *arg) {
-	struct proc_arg_t *proc_arg = (struct proc_arg_t*)arg;
+	proc_arg_t *proc_arg = (proc_arg_t*)arg;
 	proc_arg->argv = filename;
 	printf("\n");
 	process(proc_arg->ms, proc_arg->argv, proc_arg->wid);
+	remove(filename);
 	return 0;
 }
 
